@@ -31,9 +31,9 @@ from app.models import (
 from app.security import SecurityPipeline
 from app.cache import ResponseCache
 from app.monitoring import get_logger, MetricsCollector, RequestTimer
-from app.rag_agent import RAGAgent
+
 metrics: MetricsCollector = None
-agent: RAGAgent = None
+agent = None  # Lazy-loaded, type is RAGAgent but imported on demand
 logger = get_logger()
 
 
@@ -41,10 +41,36 @@ def get_agent():
     """Lazy-load RAGAgent on first request to avoid startup memory issues."""
     global agent
     if agent is None:
-        logger.info("Initializing RAGAgent (lazy load)...")
+        logger.info("Lazy-loading RAGAgent (first request)...")
+        from app.rag_agent import RAGAgent  # Import only when needed
         agent = RAGAgent()
         logger.info("RAGAgent ready!")
     return agent
+
+
+def get_security():
+    """Lazy-load SecurityPipeline on first request."""
+    global security
+    if security is None:
+        security = SecurityPipeline()
+    return security
+
+
+def get_cache():
+    """Lazy-load ResponseCache on first request."""
+    global cache
+    if cache is None:
+        settings = get_settings()
+        cache = ResponseCache(ttl_seconds=settings.cache_ttl_seconds)
+    return cache
+
+
+def get_metrics():
+    """Lazy-load MetricsCollector on first request."""
+    global metrics
+    if metrics is None:
+        metrics = MetricsCollector()
+    return metrics
 
 
 # === Lifespan (startup/shutdown) ===
@@ -52,29 +78,13 @@ def get_agent():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Initialize all components on startup, clean up on shutdown.
-    This is the modern FastAPI pattern (replaces @app.on_event).
+    Minimal startup - defer all heavy component loading to first request.
     """
-    global security, cache, metrics
-
-    settings = get_settings()
-
-    logger.info("Starting production API...", extra={"extra_data": {
-        "environment": settings.app_env,
-        "primary_model": settings.primary_model,
-        "tracing_enabled": settings.langchain_tracing_v2,
-    }})
-
-    # Initialize lightweight components only (lazy-load agent on first request)
-    security = SecurityPipeline()
-    cache = ResponseCache(ttl_seconds=settings.cache_ttl_seconds)
-    metrics = MetricsCollector()
-
-    logger.info("Core components initialized. RAGAgent will load on first request.")
+    logger.info("🚀 API starting (minimal startup, components lazy-loaded on first request)")
     
     yield
     
-    logger.info("Shutting down...", extra={"extra_data": metrics.summary})
+    logger.info("🛑 API shutting down")
 
 
 # === Rate Limiter Setup ===
@@ -130,7 +140,7 @@ async def chat(request: Request, body: ChatRequest):
         security_notes = []
 
         # ---- Step 1: Security Check ----
-        is_allowed, cleaned_message, notes = security.check_input(body.message)
+        is_allowed, cleaned_message, notes = get_security().check_input(body.message)
         security_notes.extend(notes)
 
         if not is_allowed:
@@ -138,16 +148,16 @@ async def chat(request: Request, body: ChatRequest):
                 "reason": notes,
                 "thread_id": body.thread_id,
             }})
-            metrics.record_request(latency_ms=0, error=True)
+            get_metrics().record_request(latency_ms=0, error=True)
             raise HTTPException(
                 status_code=400,
                 detail="Your message was blocked by our security filters."
             )
 
         # ---- Step 2: Cache Lookup ----
-        cached_response = cache.get(cleaned_message)
+        cached_response = get_cache().get(cleaned_message)
         if cached_response is not None:
-            metrics.record_request(latency_ms=0, cache_hit=True)
+            get_metrics().record_request(latency_ms=0, cache_hit=True)
             logger.info("Cache hit", extra={"extra_data": {
                 "thread_id": body.thread_id,
             }})
@@ -168,7 +178,7 @@ async def chat(request: Request, body: ChatRequest):
                 "thread_id": body.thread_id,
                 "error": str(e),
             }})
-            metrics.record_request(latency_ms=0, error=True)
+            get_metrics().record_request(latency_ms=0, error=True)
             raise HTTPException(
                 status_code=500,
                 detail="An error occurred while processing your request."
@@ -178,17 +188,17 @@ async def chat(request: Request, body: ChatRequest):
         model_used = result["model_used"]
 
         # ---- Step 4: Output Validation ----
-        validated_response, output_warnings = security.check_output(response_text)
+        validated_response, output_warnings = get_security().check_output(response_text)
         security_notes.extend(output_warnings)
 
         # ---- Step 5: Cache Store ----
-        cache.set(cleaned_message, validated_response)
+        get_cache().set(cleaned_message, validated_response)
 
     # ---- Step 6: Log & Record Metrics ----
     input_tokens = int(len(cleaned_message.split()) * 1.3)
     output_tokens = int(len(validated_response.split()) * 1.3)
 
-    metrics.record_request(
+    get_metrics().record_request(
         latency_ms=timer.elapsed_ms,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
@@ -242,7 +252,7 @@ async def health():
 @app.get("/metrics", response_model=MetricsResponse)
 async def get_metrics():
     """Metrics for monitoring dashboards."""
-    summary = metrics.summary
+    summary = get_metrics().summary
     return MetricsResponse(**summary)
 
 
