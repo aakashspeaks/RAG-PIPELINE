@@ -140,7 +140,7 @@ async def chat(request: Request, body: ChatRequest):
                 "reason": notes,
                 "thread_id": body.thread_id,
             }})
-            get_metrics().record_request(latency_ms=0, error=True)
+            metrics.record_request(latency_ms=0, error=True)
             raise HTTPException(
                 status_code=400,
                 detail="Your message was blocked by our security filters."
@@ -170,7 +170,7 @@ async def chat(request: Request, body: ChatRequest):
                 "thread_id": body.thread_id,
                 "error": str(e),
             }})
-            get_metrics().record_request(latency_ms=0, error=True)
+            metrics.record_request(latency_ms=0, error=True)
             raise HTTPException(
                 status_code=500,
                 detail="An error occurred while processing your request."
@@ -190,7 +190,7 @@ async def chat(request: Request, body: ChatRequest):
     input_tokens = int(len(cleaned_message.split()) * 1.3)
     output_tokens = int(len(validated_response.split()) * 1.3)
 
-    get_metrics().record_request(
+    metrics.record_request(
         latency_ms=timer.elapsed_ms,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
@@ -242,7 +242,7 @@ async def health():
 
 
 @app.get("/metrics", response_model=MetricsResponse)
-async def get_metrics():
+async def metrics_endpoint():
     """Metrics for monitoring dashboards."""
     summary = metrics.summary
     return MetricsResponse(**summary)
