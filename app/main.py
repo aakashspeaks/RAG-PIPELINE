@@ -37,6 +37,16 @@ agent: RAGAgent = None
 logger = get_logger()
 
 
+def get_agent():
+    """Lazy-load RAGAgent on first request to avoid startup memory issues."""
+    global agent
+    if agent is None:
+        logger.info("Initializing RAGAgent (lazy load)...")
+        agent = RAGAgent()
+        logger.info("RAGAgent ready!")
+    return agent
+
+
 # === Lifespan (startup/shutdown) ===
 
 @asynccontextmanager
@@ -45,7 +55,7 @@ async def lifespan(app: FastAPI):
     Initialize all components on startup, clean up on shutdown.
     This is the modern FastAPI pattern (replaces @app.on_event).
     """
-    global security, cache, metrics, agent
+    global security, cache, metrics
 
     settings = get_settings()
 
@@ -55,13 +65,12 @@ async def lifespan(app: FastAPI):
         "tracing_enabled": settings.langchain_tracing_v2,
     }})
 
-    # Initialize components
+    # Initialize lightweight components only (lazy-load agent on first request)
     security = SecurityPipeline()
     cache = ResponseCache(ttl_seconds=settings.cache_ttl_seconds)
     metrics = MetricsCollector()
-    agent = RAGAgent()
 
-    logger.info("All components initialized. Ready to serve requests with RAG.")
+    logger.info("Core components initialized. RAGAgent will load on first request.")
     
     yield
     
@@ -150,9 +159,10 @@ async def chat(request: Request, body: ChatRequest):
                 processing_time_ms=0,
             )
 
-        # ---- Step 3: Invoke LangGraph Agent ----
+        # ---- Step 3: Invoke LangGraph Agent (lazy-loaded) ----
         try:
-            result = agent.invoke(cleaned_message)
+            rag_agent = get_agent()  # Lazy-load on first request
+            result = rag_agent.invoke(cleaned_message)
         except Exception as e:
             logger.error(f"Agent invocation failed: {e}", extra={"extra_data": {
                 "thread_id": body.thread_id,
