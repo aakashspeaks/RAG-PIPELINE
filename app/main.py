@@ -33,6 +33,8 @@ from app.cache import ResponseCache
 from app.monitoring import get_logger, MetricsCollector, RequestTimer
 
 metrics: MetricsCollector = None
+security: SecurityPipeline = None
+cache: ResponseCache = None
 agent = None  # Lazy-loaded, type is RAGAgent but imported on demand
 logger = get_logger()
 
@@ -48,43 +50,33 @@ def get_agent():
     return agent
 
 
-def get_security():
-    """Lazy-load SecurityPipeline on first request."""
-    global security
-    if security is None:
-        security = SecurityPipeline()
-    return security
-
-
-def get_cache():
-    """Lazy-load ResponseCache on first request."""
-    global cache
-    if cache is None:
-        settings = get_settings()
-        cache = ResponseCache(ttl_seconds=settings.cache_ttl_seconds)
-    return cache
-
-
-def get_metrics():
-    """Lazy-load MetricsCollector on first request."""
-    global metrics
-    if metrics is None:
-        metrics = MetricsCollector()
-    return metrics
-
-
 # === Lifespan (startup/shutdown) ===
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Minimal startup - defer all heavy component loading to first request.
+    Initialize lightweight components at startup.
+    RAGAgent (heavy) will lazy-load on first request.
     """
-    logger.info("🚀 API starting (minimal startup, components lazy-loaded on first request)")
+    global security, cache, metrics
+    
+    settings = get_settings()
+
+    logger.info("🚀 API starting...", extra={"extra_data": {
+        "environment": settings.app_env,
+        "primary_model": settings.primary_model,
+    }})
+
+    # Initialize lightweight components only
+    security = SecurityPipeline()
+    cache = ResponseCache(ttl_seconds=settings.cache_ttl_seconds)
+    metrics = MetricsCollector()
+
+    logger.info("✅ Core components ready. RAGAgent lazy-loads on first request.")
     
     yield
     
-    logger.info("🛑 API shutting down")
+    logger.info("🛑 API shutting down", extra={"extra_data": metrics.summary if metrics else {}})
 
 
 # === Rate Limiter Setup ===
@@ -140,7 +132,7 @@ async def chat(request: Request, body: ChatRequest):
         security_notes = []
 
         # ---- Step 1: Security Check ----
-        is_allowed, cleaned_message, notes = get_security().check_input(body.message)
+        is_allowed, cleaned_message, notes = security.check_input(body.message)
         security_notes.extend(notes)
 
         if not is_allowed:
@@ -155,9 +147,9 @@ async def chat(request: Request, body: ChatRequest):
             )
 
         # ---- Step 2: Cache Lookup ----
-        cached_response = get_cache().get(cleaned_message)
+        cached_response = cache.get(cleaned_message)
         if cached_response is not None:
-            get_metrics().record_request(latency_ms=0, cache_hit=True)
+            metrics.record_request(latency_ms=0, cache_hit=True)
             logger.info("Cache hit", extra={"extra_data": {
                 "thread_id": body.thread_id,
             }})
@@ -188,11 +180,11 @@ async def chat(request: Request, body: ChatRequest):
         model_used = result["model_used"]
 
         # ---- Step 4: Output Validation ----
-        validated_response, output_warnings = get_security().check_output(response_text)
+        validated_response, output_warnings = security.check_output(response_text)
         security_notes.extend(output_warnings)
 
         # ---- Step 5: Cache Store ----
-        get_cache().set(cleaned_message, validated_response)
+        cache.set(cleaned_message, validated_response)
 
     # ---- Step 6: Log & Record Metrics ----
     input_tokens = int(len(cleaned_message.split()) * 1.3)
@@ -252,7 +244,7 @@ async def health():
 @app.get("/metrics", response_model=MetricsResponse)
 async def get_metrics():
     """Metrics for monitoring dashboards."""
-    summary = get_metrics().summary
+    summary = metrics.summary
     return MetricsResponse(**summary)
 
 
