@@ -1,0 +1,46 @@
+# Part 6: Advanced RAG - Dependencies (April 2026)
+# Install: pip install -r requirements.txt
+
+# Core LangChain 1.x (stable)
+langchain>=1.2.0,<2.0.0
+langchain-core>=1.3.0,<2.0.0
+langchain-community>=0.3.0,<1.0.0
+langchain-openai>=1.1.0,<2.0.0
+
+# Vector Store (use langchain-chroma, NOT langchain-community)
+langchain-chroma>=1.1.0,<2.0.0
+chromadb>=1.5.0,<2.0.0
+
+# Agentic RAG with LangGraph
+langgraph>=1.1.0,<2.0.0
+
+# For legacy retrievers (MultiQueryRetriever, etc.)
+langchain-classic>=1.0.0
+rank-bm25>=0.2.2
+
+# Text processing
+langchain-text-splitters>=1.0.0,<2.0.0
+tiktoken>=0.12.0
+
+# Document loading
+PyMuPDF>=1.26.0
+pypdf>=6.0.0
+python-dotenv>=1.0.0
+supabase>=2.5.0
+psycopg[binary]>=3.2.0
+
+# GraphRAG (Lesson 6.5)
+networkx>=3.3
+pyvis>=0.3.2
+
+# Multimodal RAG - ColPali (Lesson 6.6)
+# Note: ColPali requires GPU for optimal performance
+# colpali-engine>=0.3.0  # Uncomment if you have GPU
+# pdf2image>=1.17.0      # For PDF to image conversion
+pillow>=11.0.0
+
+# Reranking (optional)
+sentence-transformers>=5.0.0
+
+# For Anthropic Contextual Retrieval (Lesson 6.2)
+langchain-anthropic>=0.4.0
