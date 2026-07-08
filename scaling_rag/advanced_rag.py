@@ -8,9 +8,9 @@ from langchain_classic.retrievers import ContextualCompressionRetriever
 from langchain_classic.retrievers.document_compressors import LLMChainExtractor
 
 try:
-    from app.retriver import build_hybrid_retriever
+    from basic_rag.retriver import build_hybrid_retriever
 except ModuleNotFoundError:
-    from retriver import build_hybrid_retriever
+    from basic_rag.retriver import build_hybrid_retriever
 
 load_dotenv()
 
