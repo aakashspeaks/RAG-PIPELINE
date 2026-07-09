@@ -42,6 +42,12 @@ class RAGAgent:
 	def __init__(self):
 		settings = get_settings()
 
+		if not settings.openai_api_key:
+			raise ValueError(
+				"OPENAI_API_KEY is not set. "
+				"Add it to your environment variables on Render."
+			)
+
 		self.primary_llm = ChatOpenAI(
 			model=settings.primary_model,
 			temperature=0,

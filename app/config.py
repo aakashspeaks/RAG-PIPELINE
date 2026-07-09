@@ -13,7 +13,7 @@ load_dotenv()
 class Settings(BaseSettings):
     
     # LLM Configuration
-    openai_api_key: str
+    openai_api_key: str = ""  # validated at request time, not at startup
     primary_model: str = "gpt-4o-mini"
     fallback_model: str = "gpt-4o-mini"
     
