@@ -113,8 +113,9 @@ class RAGAgent:
 			try:
 				query = state.get("query") or state["messages"][-1].content
 				context = state.get("context", "")
+				retrieved_docs = state.get("retrieved_docs", [])
 				
-				if context:
+				if context and retrieved_docs:
 					# RAG mode: use context
 					logger.info("RAG: Using retrieved context for generation (RAG mode)")
 					prompt = (
@@ -124,12 +125,14 @@ class RAGAgent:
 						f"Question: {query}\n\n"
 						"Answer:"
 					)
+					response = self.primary_llm.invoke(prompt)
 				else:
-					# Fallback: answer without context
-					logger.warning("RAG: No context available, answering without RAG (fallback mode)")
-					prompt = query
-				
-				response = self.primary_llm.invoke(prompt)
+					# No documents found: return information not available message
+					logger.warning("RAG: No documents retrieved, returning 'not found' response")
+					response = AIMessage(
+						content=f"I apologize, but I wasn't able to find any relevant information about '{query}' in our available documents. "
+						"Please try asking a different question or check if the document contains information about this topic."
+					)
 				
 				return {
 					"messages": [response],

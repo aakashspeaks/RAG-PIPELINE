@@ -17,8 +17,8 @@ class InputSanitizer:
     """
 
     INJECTION_PATTERNS = [
-        r"ignore\s+(all\s+)?previous\s+instructions",
-        r"forget\s+(all\s+)?previous",
+        r"ignore\s+(all\s+)?(previous\s+)?instructions",  # "ignore instructions" or "ignore all instructions" or "ignore all previous instructions"
+        r"forget\s+(all\s+)?(previous)?",  # "forget" or "forget all" or "forget previous"
         r"new\s+instructions\s*:",
         r"system\s*prompt",
         r"---\s*end\s*(of)?\s*prompt",
@@ -27,6 +27,8 @@ class InputSanitizer:
         r"bypass\s+(all\s+)?restrictions",
         r"reveal\s+(your|the)\s+(system|instructions|prompt)",
         r"you\s+are\s+now\s+(DAN|jailbroken)",
+        r"you\s+are\s+a",  # "you are a <role>" - common jailbreak
+        r"do\s+not\s+(tell|mention|say)",  # "do not tell anyone"
     ]
     
     # Common abusive/harmful words
