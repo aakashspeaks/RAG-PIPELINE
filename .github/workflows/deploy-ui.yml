@@ -29,10 +29,15 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
+      - name: Copy UI files to root for deployment
+        run: |
+          mkdir -p _site
+          cp -r ui/* _site/
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: 'ui'
+          path: '_site'
 
       - name: Deploy to GitHub Pages
         id: deployment
