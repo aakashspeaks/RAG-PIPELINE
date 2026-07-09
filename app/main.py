@@ -227,15 +227,16 @@ async def health():
     settings = get_settings()
 
     checks = {
-        "agent": agent is not None,
+        "agent": agent is not None,  # lazy-loaded; false until first request
         "security": security is not None,
         "cache": cache is not None,
     }
 
-    all_healthy = all(checks.values())
+    # Agent is lazy-loaded by design — don't penalise health status for it
+    core_healthy = checks["security"] and checks["cache"]
 
     return HealthResponse(
-        status="healthy" if all_healthy else "degraded",
+        status="healthy" if core_healthy else "degraded",
         environment=settings.app_env,
         checks=checks,
     )
