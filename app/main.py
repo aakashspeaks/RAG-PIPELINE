@@ -177,11 +177,22 @@ async def chat(request: Request, body: ChatRequest):
             )
 
         # ---- Step 2: Cache Lookup ----
-        cached_response = cache.get(cleaned_message)
+        cache_key = cache._make_key(cleaned_message)
+        logger.info(f"Cache lookup", extra={"extra_data": {
+            "cleaned_message": cleaned_message[:100],
+            "cache_key": cache_key,
+            "thread_id": body.thread_id,
+        }})
+        
+        # Allow disabling cache via environment variable for debugging
+        use_cache = os.getenv("USE_CACHE", "true").lower() != "false"
+        cached_response = cache.get(cleaned_message) if use_cache else None
+        
         if cached_response is not None:
             metrics.record_request(latency_ms=0, cache_hit=True)
             logger.info("Cache hit", extra={"extra_data": {
                 "thread_id": body.thread_id,
+                "cache_key": cache_key,
             }})
             return ChatResponse(
                 response=cached_response,
@@ -216,7 +227,18 @@ async def chat(request: Request, body: ChatRequest):
         security_notes.extend(output_warnings)
 
         # ---- Step 5: Cache Store ----
-        cache.set(cleaned_message, validated_response)
+        if use_cache:
+            cache_key = cache._make_key(cleaned_message)
+            cache.set(cleaned_message, validated_response)
+            logger.info("Cached response", extra={"extra_data": {
+                "cleaned_message": cleaned_message[:100],
+                "cache_key": cache_key,
+                "response_length": len(validated_response),
+            }})
+        else:
+            logger.info("Cache disabled - skipping storage", extra={"extra_data": {
+                "cleaned_message": cleaned_message[:100],
+            }})
 
     # ---- Step 6: Log & Record Metrics ----
     input_tokens = int(len(cleaned_message.split()) * 1.3)
