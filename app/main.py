@@ -11,7 +11,6 @@ Wires together:
 - Health checks
 """
 
-import time
 import os
 import threading
 from contextlib import asynccontextmanager
@@ -22,7 +21,6 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from langsmith import traceable
-from dotenv import load_dotenv
 
 from app.config import get_settings
 from app.models import (
@@ -189,8 +187,6 @@ async def chat(request: Request, body: ChatRequest):
                 response=cached_response,
                 thread_id=body.thread_id,
                 model_used="cache",
-                rag_mode=False,  # Cached responses don't have RAG info
-                sources=[],
                 cached=True,
                 processing_time_ms=0,
             )
