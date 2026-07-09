@@ -1,127 +1,73 @@
-# RAG Setup Guide
+# RAG Setup - Simple
 
-This guide explains how to populate your Supabase database with documents for RAG (Retrieval-Augmented Generation) functionality.
+## How It Works
 
-## Prerequisites
+1. **On Startup**: App automatically loads PDFs from `./data`, embeds them, stores in Supabase
+2. **On Chat**: Retrieve relevant documents from Supabase, inject into LLM prompt
 
-Before setting up RAG, ensure you have:
+## Setup
 
-1. **OPENAI_API_KEY** - for document embeddings (set in Render environment)
-2. **SUPABASE_DATABASE_URL** - PostgreSQL connection string with pgvector (set in Render environment)
-3. **PDF documents** - place them in the `./data` directory
-
-## Quick Start
-
-### 1. Prepare Your Documents
-
-Place your PDF files in the `./data` directory:
+### Step 1: Add Your PDFs
 
 ```bash
 mkdir -p data
-# Copy your PDF files to ./data/
-ls data/*.pdf  # Verify files are there
+# Copy your PDFs to ./data/
+ls data/*.pdf
 ```
 
-### 2. Run the Setup Script
+### Step 2: Add Environment Variables
 
-This will initialize Supabase and populate it with embeddings:
-
-**Locally:**
-```bash
-uv run python scripts/setup_rag.py ./data
+In Render (or .env locally):
+```
+OPENAI_API_KEY=sk-...
+SUPABASE_DATABASE_URL=postgresql://...
 ```
 
-**On Render (via SSH or deployment hook):**
-Add this to your `render.yml` or run manually via SSH:
+### Step 3: Start the App
+
 ```bash
-uv run python scripts/setup_rag.py ./data
+uv run uvicorn app.main:app --reload
 ```
 
-### 3. What the Script Does
+App will automatically:
+- ✅ Load PDFs from `./data`
+- ✅ Embed chunks with OpenAI
+- ✅ Store embeddings in Supabase
+- ✅ Initialize RAG retriever
 
-1. ✅ Validates `OPENAI_API_KEY` and `SUPABASE_DATABASE_URL`
-2. ✅ Creates pgvector extension and `rag_docs` table
-3. ✅ Loads PDFs from `./data`
-4. ✅ Splits documents into chunks (500 chars, 50 char overlap)
-5. ✅ Embeds chunks with `text-embedding-3-small`
-6. ✅ Stores embeddings in Supabase with vector index
-7. ✅ Tests search with "machine learning" query
-
-### 4. Verify It Works
-
-After setup completes, test the `/chat` endpoint:
+### Step 4: Test It
 
 ```bash
-curl -X POST https://your-domain.onrender.com/chat \
+curl -X POST http://localhost:8000/chat \
   -H "Content-Type: application/json" \
   -d '{
-    "message": "What is machine learning?",
+    "message": "What is the main topic in your documents?",
     "thread_id": "user-123"
   }'
 ```
 
-You should get a response with RAG context, not just LLM knowledge.
+**Check logs for**: `RAG: Retrieved X documents` → This means it's working!
+
+## That's It
+
+No setup scripts. No manual steps. Just:
+1. Add PDFs
+2. Set env vars
+3. Start app
+4. Chat
+
+The app handles the rest automatically.
 
 ## Troubleshooting
 
 ### No documents retrieved
+- Check logs for: "RAG: Retrieved 0 documents"
+- Verify PDFs are in `./data`
+- Check `OPENAI_API_KEY` is valid
+- Check `SUPABASE_DATABASE_URL` is set correctly
 
-Check the logs:
+### Build fails locally
 ```bash
-# Look for: "RAG: Retrieved 0 documents"
-# Solution: Run setup_rag.py again to populate Supabase
+uv run pip install -e .
+uv run pytest tests/
 ```
-
-### Embeddings API errors
-
-```bash
-# Error: "OPENAI_API_KEY not set"
-# Solution: Set OPENAI_API_KEY in Render environment variables
-```
-
-### Supabase connection errors
-
-```bash
-# Error: "SUPABASE_DATABASE_URL not set"
-# Solution: Ensure SUPABASE_DATABASE_URL is set in Render environment
-```
-
-### PDFs not loading
-
-```bash
-# Error: "No PDF files found in ./data"
-# Solution: 
-# 1. Create ./data directory
-# 2. Add PDF files to it
-# 3. Re-run setup script
-```
-
-## Files Modified
-
-- **app/document_loader.py** - PDF loading and chunking logic
-- **app/embedding.py** - OpenAI embedding functions
-- **app/rag_supabase.py** - Supabase vector search and storage
-- **scripts/setup_rag.py** - Setup script to populate database
-- **app/rag_agent.py** - Added RAG logging for debugging
-- **app/main.py** - Agent now warms up in background
-
-## Document Processing Details
-
-- **Chunk Size**: 500 characters
-- **Chunk Overlap**: 50 characters (for context continuity)
-- **Embedding Model**: `text-embedding-3-small` (1536 dimensions)
-- **Vector Index**: IVFFlat (inverted file) for fast similarity search
-- **Hybrid Search**: 60% vector + 40% BM25 keyword (if available)
-
-## Cost Considerations
-
-- OpenAI embeddings: ~$0.02 per 1M tokens
-- Supabase: Free tier includes 1GB storage, 200K DB writes/month
-- For 1000 documents (avg 1000 tokens each): ~$0.02 embedding cost
-
-## Next Steps
-
-1. Place your PDFs in `./data`
-2. Run the setup script
-3. Monitor logs to verify documents are being retrieved
-4. Adjust chunk size/overlap if needed for your use case

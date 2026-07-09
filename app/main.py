@@ -51,6 +51,24 @@ def get_agent():
     return agent
 
 
+def _populate_rag_documents():
+    """Load and store documents from ./data into Supabase (one time)."""
+    try:
+        from pathlib import Path
+        data_dir = Path("./data")
+        
+        if not data_dir.exists() or not list(data_dir.glob("**/*.pdf")):
+            logger.info("No PDFs found in ./data - skipping RAG population")
+            return
+        
+        logger.info("📚 Populating RAG documents from ./data...")
+        from app.rag_supabase import store_to_supabase
+        store_to_supabase("./data")
+        logger.info("✅ RAG documents stored in Supabase")
+    except Exception as e:
+        logger.warning(f"RAG population failed: {e}")
+
+
 def _warmup_agent():
     """Initialize RAGAgent in a background thread at startup."""
     try:
@@ -80,6 +98,9 @@ async def lifespan(app: FastAPI):
     security = SecurityPipeline()
     cache = ResponseCache(ttl_seconds=settings.cache_ttl_seconds)
     metrics = MetricsCollector()
+
+    # Auto-populate RAG from ./data on startup
+    _populate_rag_documents()
 
     # Warm up agent in background — first /chat won't block on initialization
     threading.Thread(target=_warmup_agent, daemon=True).start()
