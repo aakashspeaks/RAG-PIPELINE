@@ -44,3 +44,6 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Cached settings instance - loaded once, reused everywhere."""
     return Settings()
+
+# Module-level settings instance for direct imports
+settings = get_settings()
