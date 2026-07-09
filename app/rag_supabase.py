@@ -5,7 +5,6 @@ Integrates pgvector similarity search with local keyword search.
 
 from __future__ import annotations
 import os
-import sys
 import psycopg
 from dotenv import load_dotenv
 from langchain_core.documents import Document
@@ -13,8 +12,8 @@ from langchain_core.retrievers import BaseRetriever
 from langchain_classic.retrievers import EnsembleRetriever
 from langchain_openai import OpenAIEmbeddings
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from app.embedding import get_embeddings_model
+from app.document_loader import process_all_pdfs, document_splitter
 
 try:
 	from rag_basic.retriver import _load_or_rebuild_bm25
@@ -25,19 +24,11 @@ except (ModuleNotFoundError, ImportError) as e:
 load_dotenv()
 
 
-def _get_embeddings_model(model: str = "text-embedding-3-small") -> OpenAIEmbeddings:
-	"""Create embeddings client for Supabase vector search."""
-	api_key = os.getenv("OPENAI_API_KEY")
-	if not api_key:
-		raise ValueError("OPENAI_API_KEY not found in environment")
-	return OpenAIEmbeddings(model=model, api_key=api_key)
-
-
 def init_supabase():
 	"""One-time setup: Create table and enable pgvector."""
 	db_uri = os.getenv("SUPABASE_DATABASE_URL")
 	if not db_uri:
-		raise ValueError("Add SUPABASE_DATABASE_URL to .env")
+		raise ValueError("SUPABASE_DATABASE_URL not set. Add it to your .env file.")
 
 	try:
 		with psycopg.connect(db_uri, connect_timeout=10) as conn:
@@ -70,15 +61,50 @@ def init_supabase():
 
 
 def store_to_supabase(data_dir: str = "./data"):
-	"""Load PDFs, embed them, store in Supabase - SIMPLIFIED VERSION."""
+	"""Load PDFs, embed them, store in Supabase."""
 	db_uri = os.getenv("SUPABASE_DATABASE_URL")
 	if not db_uri:
 		raise ValueError("SUPABASE_DATABASE_URL not set")
 	
-	# Simple message - full implementation would need PDF loader
-	print(f"📄 Would load PDFs from {data_dir}")
-	print("💾 This function requires full production_rag setup")
-	print("✓ For now, using existing Supabase data")
+	# Initialize table first
+	init_supabase()
+	
+	# Load and split documents
+	print("📄 Loading PDFs...")
+	documents = process_all_pdfs(data_dir)
+	if not documents:
+		print("⚠️  No PDFs found in", data_dir)
+		return
+	
+	chunks = document_splitter(documents)
+	print(f"✂️  Split into {len(chunks)} chunks")
+	
+	# Get embeddings
+	embeddings = get_embeddings_model()
+	
+	# Store in Supabase (clear first to avoid duplicates)
+	print("💾 Storing in Supabase...")
+	with psycopg.connect(db_uri, connect_timeout=10) as conn:
+		with conn.cursor() as cur:
+			cur.execute("DELETE FROM rag_docs")
+			print("🗑️  Cleared existing records")
+			
+			for i, chunk in enumerate(chunks):
+				embedding = embeddings.embed_query(chunk.page_content)
+				cur.execute(
+					"INSERT INTO rag_docs (content, embedding, source, page) VALUES (%s, %s, %s, %s)",
+					(
+						chunk.page_content,
+						embedding,
+						chunk.metadata.get("source", "unknown"),
+						chunk.metadata.get("page", 0)
+					)
+				)
+				if (i + 1) % 10 == 0:
+					print(f"  ... stored {i + 1}/{len(chunks)} chunks")
+			
+			conn.commit()
+	print(f"✅ Stored {len(chunks)} documents in Supabase")
 
 
 class SupabaseVectorRetriever(BaseRetriever):
@@ -90,12 +116,14 @@ class SupabaseVectorRetriever(BaseRetriever):
 		"""Search Supabase vectors."""
 		db_uri = os.getenv("SUPABASE_DATABASE_URL")
 		if not db_uri:
-			raise ValueError("SUPABASE_DATABASE_URL not set")
+			print("Error: SUPABASE_DATABASE_URL not set")
+			return []
 		
-		embeddings = _get_embeddings_model()
-		query_embedding = embeddings.embed_query(query)
+		embeddings = get_embeddings_model()
 		
 		try:
+			query_embedding = embeddings.embed_query(query)
+			
 			with psycopg.connect(db_uri, connect_timeout=10) as conn:
 				with conn.cursor() as cur:
 					cur.execute("""
@@ -107,23 +135,23 @@ class SupabaseVectorRetriever(BaseRetriever):
 					""", (str(query_embedding), str(query_embedding), self.top_k))
 					
 					results = cur.fetchall()
+			
+			docs = []
+			for content, source, page, similarity in results:
+				doc = Document(
+					page_content=content,
+					metadata={"source": source, "page": page, "similarity": similarity}
+				)
+				docs.append(doc)
+			
+			return docs
 		except Exception as e:
 			print(f"Error querying Supabase: {e}")
 			return []
-		
-		docs = []
-		for content, source, page, similarity in results:
-			doc = Document(
-				page_content=content,
-				metadata={"source": source, "page": page, "similarity": similarity}
-			)
-			docs.append(doc)
-		
-		return docs
 
 
 def search_supabase(query: str, top_k: int = 4) -> list[Document]:
-	"""Hybrid search: Supabase vector + optional BM25 keyword."""
+	"""Hybrid search: Supabase vector (60%) + optional BM25 keyword (40%)."""
 	# 1. Vector search from Supabase
 	vector_retriever = SupabaseVectorRetriever(top_k=top_k)
 	vector_docs = vector_retriever.invoke(query)
@@ -151,11 +179,36 @@ def search_supabase(query: str, top_k: int = 4) -> list[Document]:
 
 
 if __name__ == "__main__":
-	init_supabase()
-	store_to_supabase()
+	"""
+	Script to populate Supabase with documents.
+	Run: uv run python -m app.rag_supabase
+	or: uv run python app/rag_supabase.py
+	"""
+	import sys
 	
-	# Test search
-	results = search_supabase("attention mechanism")
-	print(f"\n🔍 Found {len(results)} results:")
-	for i, doc in enumerate(results, 1):
-		print(f"{i}. {doc.page_content[:100]}...")
+	print("🚀 Starting RAG setup...")
+	
+	# Check required env vars
+	if not os.getenv("SUPABASE_DATABASE_URL"):
+		print("❌ Error: SUPABASE_DATABASE_URL not set")
+		sys.exit(1)
+	
+	if not os.getenv("OPENAI_API_KEY"):
+		print("❌ Error: OPENAI_API_KEY not set")
+		sys.exit(1)
+	
+	# Initialize and populate
+	try:
+		store_to_supabase("./data")
+		
+		# Test search
+		print("\n🔍 Testing search...")
+		results = search_supabase("machine learning")
+		print(f"Found {len(results)} results for 'machine learning'")
+		for i, doc in enumerate(results[:2], 1):
+			print(f"\n[Result {i}]")
+			print(f"Source: {doc.metadata.get('source', 'unknown')}")
+			print(f"Content: {doc.page_content[:100]}...")
+	except Exception as e:
+		print(f"❌ Error: {e}")
+		sys.exit(1)
