@@ -13,6 +13,7 @@ Wires together:
 
 import time
 import os
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, HTTPException
@@ -40,14 +41,22 @@ logger = get_logger()
 
 
 def get_agent():
-    """Lazy-load RAGAgent on first request to avoid startup memory issues."""
+    """Return the global RAGAgent, initializing it if needed."""
     global agent
     if agent is None:
-        logger.info("Lazy-loading RAGAgent (first request)...")
-        from app.rag_agent import RAGAgent  # Import only when needed
+        logger.info("Initializing RAGAgent...")
+        from app.rag_agent import RAGAgent
         agent = RAGAgent()
         logger.info("RAGAgent ready!")
     return agent
+
+
+def _warmup_agent():
+    """Initialize RAGAgent in a background thread at startup."""
+    try:
+        get_agent()
+    except Exception as e:
+        logger.warning(f"Agent warmup failed (will retry on first request): {e}")
 
 
 # === Lifespan (startup/shutdown) ===
@@ -72,7 +81,9 @@ async def lifespan(app: FastAPI):
     cache = ResponseCache(ttl_seconds=settings.cache_ttl_seconds)
     metrics = MetricsCollector()
 
-    logger.info("✅ Core components ready. RAGAgent lazy-loads on first request.")
+    # Warm up agent in background — first /chat won't block on initialization
+    threading.Thread(target=_warmup_agent, daemon=True).start()
+    logger.info("✅ Core components ready. RAGAgent warming up in background.")
     
     yield
     
