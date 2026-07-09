@@ -189,6 +189,8 @@ async def chat(request: Request, body: ChatRequest):
                 response=cached_response,
                 thread_id=body.thread_id,
                 model_used="cache",
+                rag_mode=False,  # Cached responses don't have RAG info
+                sources=[],
                 cached=True,
                 processing_time_ms=0,
             )
@@ -210,6 +212,8 @@ async def chat(request: Request, body: ChatRequest):
 
         response_text = result["response"]
         model_used = result["model_used"]
+        rag_mode = result.get("rag_mode", False)
+        sources = result.get("sources", [])
 
         # ---- Step 4: Output Validation ----
         validated_response, output_warnings = security.check_output(response_text)
@@ -245,6 +249,8 @@ async def chat(request: Request, body: ChatRequest):
         response=validated_response,
         thread_id=body.thread_id,
         model_used=model_used,
+        rag_mode=rag_mode,
+        sources=sources,
         cached=False,
         processing_time_ms=round(timer.elapsed_ms, 2),
         security_notes=security_notes,

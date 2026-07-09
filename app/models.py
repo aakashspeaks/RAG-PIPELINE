@@ -27,6 +27,8 @@ class ChatResponse(BaseModel):
     model_used: str
     cached: bool = False
     processing_time_ms: float
+    rag_mode: bool = Field(default=False, description="True if answer uses retrieved documents, False if LLM-only")
+    sources: list[str] = Field(default_factory=list, description="Source documents used (filenames)")
     security_notes: list[str] = Field(default_factory=list)
     timestamp: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()

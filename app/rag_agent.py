@@ -217,7 +217,7 @@ class RAGAgent:
 	def invoke(self, message: str) -> dict:
 		"""
 		Invoke the RAG agent.
-		Returns: {"response": str, "model_used": str, "docs_used": int, "rag_used": bool, "error": str | None}
+		Returns: {"response": str, "model_used": str, "rag_mode": bool, "sources": list[str], "error": str | None}
 		"""
 		result = self.graph.invoke({
 			"messages": [HumanMessage(content=message)],
@@ -229,11 +229,19 @@ class RAGAgent:
 			"model_used": "",
 		})
 
-		docs_count = len(result.get("retrieved_docs", []))
+		# Extract sources from retrieved documents
+		retrieved_docs = result.get("retrieved_docs", [])
+		sources = list(set(
+			doc.metadata.get("source", "unknown")
+			for doc in retrieved_docs
+		))
+		
+		rag_mode = len(retrieved_docs) > 0
+		
 		return {
 			"response": result["messages"][-1].content,
 			"model_used": result.get("model_used", "unknown"),
-			"docs_used": docs_count,
-			"rag_used": docs_count > 0,  # ✅ Clear indicator
+			"rag_mode": rag_mode,
+			"sources": sources,
 			"error": result.get("error"),
 		}
