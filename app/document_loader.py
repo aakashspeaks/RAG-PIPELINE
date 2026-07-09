@@ -4,15 +4,14 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
 
-
+import fitz  # PyMuPDF
 from langchain_core.documents import Document
-from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
     
 
 ### Read all the pdf's inside the directory
 def process_all_pdfs(pdf_directory):
-    """Process all PDF files in a directory"""
+    """Process all PDF files in a directory using PyMuPDF (faster than pypdf)"""
     all_documents = []
     pdf_dir = Path(pdf_directory)
     
@@ -24,13 +23,23 @@ def process_all_pdfs(pdf_directory):
     for pdf_file in pdf_files:
         print(f"\nProcessing: {pdf_file.name}")
         try:
-            loader = PyPDFLoader(str(pdf_file))
-            documents = loader.load()
+            # Use PyMuPDF for faster PDF loading
+            doc = fitz.open(str(pdf_file))
+            documents = []
             
-            # Add source information to metadata
-            for doc in documents:
-                doc.metadata['source_file'] = pdf_file.name
-                doc.metadata['file_type'] = 'pdf'
+            for page_num, page in enumerate(doc):
+                text = page.get_text()
+                
+                metadata = {
+                    'source': pdf_file.name,
+                    'page': page_num + 1,
+                    'file_type': 'pdf'
+                }
+                
+                documents.append(Document(
+                    page_content=text,
+                    metadata=metadata
+                ))
             
             all_documents.extend(documents)
             print(f"  ✓ Loaded {len(documents)} pages")
