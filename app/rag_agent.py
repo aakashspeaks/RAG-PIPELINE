@@ -13,6 +13,9 @@ from langsmith import traceable
 
 from app.config import get_settings
 from app.rag_supabase import search_supabase
+from app.monitoring import get_logger
+
+logger = get_logger()
 
 
 # === RAG Agent State ===
@@ -72,7 +75,14 @@ class RAGAgent:
 			"""Retrieve documents from Supabase using hybrid search."""
 			try:
 				query = state.get("query") or state["messages"][-1].content
+				logger.info(f"RAG: Retrieving documents for query: {query[:50]}...")
+				
 				docs = search_supabase(query, top_k=4)
+				
+				if not docs:
+					logger.warning("RAG: No documents retrieved from Supabase. Check if SUPABASE_DATABASE_URL is set and documents exist.")
+				else:
+					logger.info(f"RAG: Retrieved {len(docs)} documents")
 				
 				# Format context from docs
 				context_blocks = []
@@ -91,6 +101,7 @@ class RAGAgent:
 					"error": None,
 				}
 			except Exception as e:
+				logger.error(f"RAG: Retrieval failed: {str(e)}")
 				return {
 					"retrieved_docs": [],
 					"context": "",
@@ -105,6 +116,7 @@ class RAGAgent:
 				
 				if context:
 					# RAG mode: use context
+					logger.info("RAG: Using retrieved context for generation (RAG mode)")
 					prompt = (
 						"You are a helpful assistant. Answer the user's question using ONLY the provided context. "
 						"If the context doesn't contain relevant information, say so clearly.\n\n"
@@ -114,6 +126,7 @@ class RAGAgent:
 					)
 				else:
 					# Fallback: answer without context
+					logger.warning("RAG: No context available, answering without RAG (fallback mode)")
 					prompt = query
 				
 				response = self.primary_llm.invoke(prompt)
@@ -124,6 +137,7 @@ class RAGAgent:
 					"model_used": "primary_rag",
 				}
 			except Exception as e:
+				logger.error(f"RAG: Generation failed: {str(e)}")
 				return {
 					"error": str(e),
 					"retry_count": state["retry_count"] + 1,

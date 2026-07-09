@@ -28,18 +28,32 @@ class InputSanitizer:
         r"reveal\s+(your|the)\s+(system|instructions|prompt)",
         r"you\s+are\s+now\s+(DAN|jailbroken)",
     ]
+    
+    # Common abusive/harmful words
+    ABUSIVE_WORDS = [
+        "kill", "suicide", "bomb", "terrorist", "rape", "abuse",
+        "hate", "discriminate", "racist", "sexist", "harassment",
+    ]
 
     def __init__(self):
-        self.patterns = [re.compile(p, re.IGNORECASE) for p in self.INJECTION_PATTERNS]
+        self.injection_patterns = [re.compile(p, re.IGNORECASE) for p in self.INJECTION_PATTERNS]
+        self.abusive_patterns = [re.compile(rf"\b{word}\b", re.IGNORECASE) for word in self.ABUSIVE_WORDS]
 
     def check(self, text: str) -> tuple[bool, Optional[str]]:
         """
         Check if input is safe.
         Returns: (is_safe, rejection_reason)
         """
-        for pattern in self.patterns:
+        # Check for injection attempts
+        for pattern in self.injection_patterns:
             if pattern.search(text):
                 return False, "Blocked: potential prompt injection detected"
+        
+        # Check for abusive/harmful content
+        for pattern in self.abusive_patterns:
+            if pattern.search(text):
+                return False, "Blocked: abusive or harmful content detected"
+        
         return True, None
 
     def clean(self, text: str) -> str:
@@ -156,16 +170,18 @@ class SecurityPipeline:
         # Step 1: Check for injection
         is_safe, reason = self.sanitizer.check(text)
         if not is_safe:
-            return False, "", [reason]
+            notes.append(reason)
+            return False, "", notes
 
         # Step 2: Clean input
         cleaned = self.sanitizer.clean(text)
+        notes.append("Input cleaned of delimiters")
 
-        # Step 3: Mask PII before it reaches the LLM
+        # Step 3: Detect & mask PII before it reaches the LLM
         pii_found = self.pii_detector.detect(cleaned)
         if pii_found:
             cleaned = self.pii_detector.mask(cleaned)
-            notes.append(f"Input PII masked: {list(pii_found.keys())}")
+            notes.append(f"Input PII detected and masked: {list(pii_found.keys())}")
 
         return True, cleaned, notes
 
