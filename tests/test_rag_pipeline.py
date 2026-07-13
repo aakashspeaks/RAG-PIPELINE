@@ -67,7 +67,12 @@ def test_document_splitting():
     print("TEST 3: Document Splitting")
     print("=" * 60)
     
-    from app.document_loader import process_all_pdfs, document_splitter
+    from app.document_loader import (
+        process_all_pdfs,
+        document_splitter,
+        DEFAULT_CHUNK_OVERLAP,
+        DEFAULT_CHUNK_SIZE,
+    )
     
     try:
         documents = process_all_pdfs("./data")
@@ -78,8 +83,8 @@ def test_document_splitting():
             return False
         
         print(f"✅ Split into {len(chunks)} chunks")
-        print(f"   Chunk size: 500 characters")
-        print(f"   Chunk overlap: 50 characters")
+        print(f"   Chunk size: {DEFAULT_CHUNK_SIZE} characters")
+        print(f"   Chunk overlap: {DEFAULT_CHUNK_OVERLAP} characters")
         print(f"   First chunk: {chunks[0].page_content[:80]}...")
         print()
         return True

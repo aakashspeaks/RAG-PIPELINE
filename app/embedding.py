@@ -23,7 +23,7 @@ def get_embeddings_model(model: str = "text-embedding-3-small") -> OpenAIEmbeddi
 def load_and_split_chunks(data_dir: str = "./data") -> list[Document]:
 	"""Load PDFs and split them into chunked LangChain documents."""
 	documents = process_all_pdfs(data_dir)
-	return document_splitter(documents)
+	return document_splitter(documents, strategy="hybrid")
 
 
 def embed_chunk_documents(
@@ -60,8 +60,10 @@ def embed_chunks_from_data(
 	data_dir: str = "./data",
 	embeddings_model: OpenAIEmbeddings | None = None,
 	batch_size: int = 128,
+	chunking_strategy: str = "hybrid",
 ) -> tuple[list[Document], list[list[float]]]:
 	"""One-call helper: load PDFs, split to chunks, and embed those chunks."""
-	chunk_docs = load_and_split_chunks(data_dir)
+	documents = process_all_pdfs(data_dir)
+	chunk_docs = document_splitter(documents, strategy=chunking_strategy)
 	vectors = embed_chunk_documents(chunk_docs, embeddings_model=embeddings_model, batch_size=batch_size)
 	return chunk_docs, vectors

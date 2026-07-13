@@ -66,6 +66,7 @@ class RAGAgent:
 			api_key=settings.openai_api_key,
 		)
 		self.max_retries = settings.max_retries
+		self.retrieval_top_k = settings.retrieval_top_k
 		self.graph = self._build_graph()
 
 	def _build_graph(self):
@@ -77,7 +78,17 @@ class RAGAgent:
 				query = state.get("query") or state["messages"][-1].content
 				logger.info(f"RAG: Retrieving documents for query: {query[:50]}...")
 				
-				docs = search_supabase(query, top_k=4)
+				docs = search_supabase(query, top_k=self.retrieval_top_k)
+
+				# Prioritize chunks that have lexical evidence for the current query.
+				evidence_docs = [
+					doc for doc in docs
+					if float(doc.metadata.get("phrase_bonus", 0.0)) > 0.0
+					or float(doc.metadata.get("bm25_score", 0.0)) > 0.0
+					or float(doc.metadata.get("term_ratio", 0.0)) >= 0.45
+				]
+				if evidence_docs:
+					docs = evidence_docs[: self.retrieval_top_k]
 				
 				if not docs:
 					logger.warning("RAG: No documents retrieved from Supabase. Check if SUPABASE_DATABASE_URL is set and documents exist.")
@@ -120,7 +131,8 @@ class RAGAgent:
 					logger.info("RAG: Using retrieved context for generation (RAG mode)")
 					prompt = (
 						"You are a helpful assistant. Answer the user's question using ONLY the provided context. "
-						"If the context doesn't contain relevant information, say so clearly.\n\n"
+						"Prefer direct definitions when present. Quote short supporting phrases from context where useful. "
+						"If the context truly lacks relevant information, say so clearly.\n\n"
 						f"Context:\n{context}\n\n"
 						f"Question: {query}\n\n"
 						"Answer:"

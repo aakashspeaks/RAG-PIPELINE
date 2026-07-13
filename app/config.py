@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     rate_limit: str = "20/minute"
     cache_ttl_seconds: int = 300
     max_retries: int = 3
+    retrieval_top_k: int = 8
+    retrieval_candidate_pool: int = 32
+    retrieval_vector_weight: float = 0.55
+    retrieval_bm25_weight: float = 0.35
+    retrieval_phrase_weight: float = 0.07
+    retrieval_term_weight: float = 0.03
     
     
     model_config = {"env_file": ".env", "extra": "ignore"}
